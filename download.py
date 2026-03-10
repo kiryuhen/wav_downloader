@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-"""download.py — Загрузка аудио с YouTube, SoundCloud и Spotify в WAV/MP3."""
 
 import argparse
 import sys
@@ -14,9 +13,6 @@ from urllib.request import urlopen, Request
 from urllib.parse import urlencode
 from urllib.error import HTTPError
 from base64 import b64encode
-
-
-# ─── .env loader ───────────────────────────────────────────────────────────────
 
 def load_env():
     """Загружает переменные из .env файла рядом со скриптом."""
@@ -36,9 +32,6 @@ def load_env():
             if key and value:
                 os.environ.setdefault(key, value)
 
-
-# ─── Dependency check ──────────────────────────────────────────────────────────
-
 def check_dependencies():
     """Проверяет наличие yt-dlp и ffmpeg."""
     missing = []
@@ -51,9 +44,6 @@ def check_dependencies():
         print("   brew install yt-dlp ffmpeg")
         sys.exit(1)
 
-
-# ─── Source detection ──────────────────────────────────────────────────────────
-
 def detect_source(url: str) -> str:
     """Определяет источник по URL."""
     if "youtube.com" in url or "youtu.be" in url:
@@ -64,8 +54,6 @@ def detect_source(url: str) -> str:
         return "spotify"
     return "unknown"
 
-
-# ─── Spotify API (zero dependencies, stdlib only) ─────────────────────────────
 
 class SpotifyClient:
     """Минимальный Spotify API клиент на чистом urllib."""
@@ -203,9 +191,6 @@ class SpotifyClient:
         print(f"❌ Неподдерживаемый тип: {kind}")
         sys.exit(1)
 
-
-# ─── YouTube search ───────────────────────────────────────────────────────────
-
 def search_youtube(query: str) -> str | None:
     """Ищет трек на YouTube через yt-dlp, возвращает URL."""
     try:
@@ -219,9 +204,6 @@ def search_youtube(query: str) -> str | None:
     except Exception:
         pass
     return None
-
-
-# ─── Track info ───────────────────────────────────────────────────────────────
 
 def get_track_info(url: str) -> dict | None:
     """Получает метаданные трека (YouTube/SoundCloud)."""
@@ -242,9 +224,6 @@ def get_track_info(url: str) -> dict | None:
     except Exception:
         return None
 
-
-# ─── Helpers ──────────────────────────────────────────────────────────────────
-
 def sanitize_filename(name: str) -> str:
     """Убирает недопустимые символы из имени файла."""
     forbidden = '<>:"/\\|?*'
@@ -252,12 +231,10 @@ def sanitize_filename(name: str) -> str:
         name = name.replace(ch, "_")
     return name.strip(". ")
 
-
 def format_duration(seconds: int) -> str:
     """Форматирует секунды в M:SS."""
     m, s = divmod(seconds, 60)
     return f"{m}:{s:02d}"
-
 
 def build_cmd(
     url: str,
@@ -279,7 +256,6 @@ def build_cmd(
     cmd += ["-o", str(output_dir / f"{stem}.%(ext)s")]
     cmd.append(url)
     return cmd
-
 
 def download_single(
     url: str,
@@ -322,9 +298,6 @@ def download_single(
             print(f"  ✅ {output_path.name} ({size_mb:.1f} MB)")
     return True
 
-
-# ─── Spotify flow ─────────────────────────────────────────────────────────────
-
 def handle_spotify(
     url: str,
     output_dir: Path,
@@ -365,7 +338,7 @@ def handle_spotify(
         download_single(yt_url, output_dir, name, fmt, sample_rate, quiet)
         return
 
-    # ── Playlist / Album ──
+    # Playlist / Album 
     if not quiet:
         total_dur = sum(t["duration"] for t in tracks)
         fmt_label = f"WAV {sample_rate}Hz" if fmt == "wav" else "MP3 320kbps"
@@ -398,9 +371,6 @@ def handle_spotify(
     print()
     print(f"📊 Итого: ✅ {ok} загружено, ❌ {fail} ошибок из {total}")
 
-
-# ─── Direct flow (YouTube / SoundCloud) ──────────────────────────────────────
-
 def handle_direct(
     url: str,
     output_dir: Path,
@@ -424,10 +394,7 @@ def handle_direct(
         print(f"⏱  {format_duration(info['duration'])}")
 
     download_single(url, output_dir, filename, fmt, sample_rate, quiet)
-
-
-# ─── Entry point ──────────────────────────────────────────────────────────────
-
+    
 def main():
     parser = argparse.ArgumentParser(
         prog="download",
