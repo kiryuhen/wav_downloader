@@ -8,44 +8,199 @@ import shutil
 import json
 import re
 import time
+import threading
 from pathlib import Path
 from urllib.request import urlopen, Request
 from urllib.parse import urlencode
 from urllib.error import HTTPError
 from base64 import b64encode
 
-def load_env():
-    """Загружает переменные из .env файла рядом со скриптом."""
-    env_path = Path(__file__).resolve().parent / ".env"
-    if not env_path.exists():
+
+# ╔══════════════════════════════════════════════════════════════════════════════╗
+# ║  SPOTIFY API — вставь свои ключи сюда                                      ║
+# ║  Получить: https://developer.spotify.com/dashboard                         ║
+# ╚══════════════════════════════════════════════════════════════════════════════╝
+
+SPOTIFY_CLIENT_ID = ""
+SPOTIFY_CLIENT_SECRET = ""
+
+class C:
+    """Цвета и эффекты для терминала."""
+    RST       = "\033[0m"
+    BOLD      = "\033[1m"
+    DIM       = "\033[2m"
+    # Greens
+    GREEN     = "\033[38;5;46m"
+    LIME      = "\033[38;5;118m"
+    MINT      = "\033[38;5;48m"
+    # Purples
+    PURPLE    = "\033[38;5;135m"
+    VIOLET    = "\033[38;5;99m"
+    MAGENTA   = "\033[38;5;201m"
+    PINK      = "\033[38;5;213m"
+    # Neon accents
+    CYAN      = "\033[38;5;51m"
+    WHITE     = "\033[38;5;255m"
+    GRAY      = "\033[38;5;240m"
+    RED       = "\033[38;5;196m"
+    YELLOW    = "\033[38;5;226m"
+    # Backgrounds
+    BG_PURPLE = "\033[48;5;53m"
+    BG_GREEN  = "\033[48;5;22m"
+
+    @staticmethod
+    def neon_green(text):  return f"{C.BOLD}{C.GREEN}{text}{C.RST}"
+    @staticmethod
+    def neon_purple(text): return f"{C.BOLD}{C.PURPLE}{text}{C.RST}"
+    @staticmethod
+    def neon_violet(text): return f"{C.BOLD}{C.VIOLET}{text}{C.RST}"
+    @staticmethod
+    def neon_cyan(text):   return f"{C.BOLD}{C.CYAN}{text}{C.RST}"
+    @staticmethod
+    def neon_mag(text):    return f"{C.BOLD}{C.MAGENTA}{text}{C.RST}"
+    @staticmethod
+    def dim(text):         return f"{C.DIM}{text}{C.RST}"
+    @staticmethod
+    def err(text):         return f"{C.BOLD}{C.RED}{text}{C.RST}"
+    @staticmethod
+    def ok(text):          return f"{C.BOLD}{C.LIME}{text}{C.RST}"
+    @staticmethod
+    def warn(text):        return f"{C.BOLD}{C.YELLOW}{text}{C.RST}"
+
+LOGO_LINES = [
+    "██████╗  ██╗      ",
+    "██╔══██╗ ██║      ",
+    "██║  ██║ ██║      ",
+    "██║  ██║ ██║      ",
+    "██████╔╝ ███████╗ ",
+    "╚═════╝  ╚══════╝ ",
+]
+
+TITLE_LINES = [
+    "█████╗ ██╗   ██╗██████╗ ██╗ ██████╗ ",
+    "██╔══██╗██║   ██║██╔══██╗██║██╔═══██╗",
+    "███████║██║   ██║██║  ██║██║██║   ██║",
+    "██╔══██║██║   ██║██║  ██║██║██║   ██║",
+    "██║  ██║╚██████╔╝██████╔╝██║╚██████╔╝",
+    "╚═╝  ╚═╝ ╚═════╝ ╚═════╝ ╚═╝ ╚═════╝ ",
+]
+
+# Gradient palette: green → cyan → purple → magenta
+GRADIENT = [
+    "\033[38;5;46m",   # green
+    "\033[38;5;48m",   # mint
+    "\033[38;5;50m",   # cyan-green
+    "\033[38;5;51m",   # cyan
+    "\033[38;5;93m",   # blue-purple
+    "\033[38;5;99m",   # violet
+    "\033[38;5;135m",  # purple
+    "\033[38;5;171m",  # magenta-purple
+    "\033[38;5;201m",  # magenta
+    "\033[38;5;213m",  # pink
+]
+
+def print_splash(quiet: bool = False):
+    """Анимированный splash screen с neon-градиентом."""
+    if quiet:
         return
-    with open(env_path) as f:
-        for line in f:
-            line = line.strip()
-            if not line or line.startswith("#"):
-                continue
-            if "=" not in line:
-                continue
-            key, _, value = line.partition("=")
-            key = key.strip()
-            value = value.strip().strip("\"'")
-            if key and value:
-                os.environ.setdefault(key, value)
+
+    cols = shutil.get_terminal_size().columns
+    total_lines = LOGO_LINES
+
+    # Объединяем DL + AUDIO
+    combined = []
+    for i in range(len(LOGO_LINES)):
+        left = LOGO_LINES[i] if i < len(LOGO_LINES) else ""
+        right = TITLE_LINES[i] if i < len(TITLE_LINES) else ""
+        combined.append(left + right)
+
+    # Neon wave animation
+    frames = 8
+    try:
+        for frame in range(frames):
+            sys.stdout.write("\033[?25l")  # скрыть курсор
+            if frame > 0:
+                sys.stdout.write(f"\033[{len(combined) + 2}A")  # вверх
+
+            print()
+            for i, line in enumerate(combined):
+                color_idx = (i + frame) % len(GRADIENT)
+                color = GRADIENT[color_idx]
+                padded = line.center(cols)
+                sys.stdout.write(f"{color}{C.BOLD}{padded}{C.RST}\n")
+            print()
+
+            time.sleep(0.07)
+
+        sys.stdout.write("\033[?25h")  # вернуть курсор
+    except (KeyboardInterrupt, BrokenPipeError):
+        sys.stdout.write("\033[?25h")
+
+    # Tagline
+    tag = "⚡ YouTube · SoundCloud · Spotify → WAV / MP3 ⚡"
+    print(f"{C.BOLD}{C.VIOLET}{tag.center(cols)}{C.RST}")
+
+    sep = "─" * min(60, cols - 4)
+    print(f"{C.PURPLE}{sep.center(cols)}{C.RST}")
+    print()
+
+class Spinner:
+    """Анимированный спиннер для долгих операций."""
+    FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
+    COLORS = [C.GREEN, C.LIME, C.MINT, C.CYAN, C.VIOLET, C.PURPLE, C.MAGENTA, C.PINK]
+
+    def __init__(self, message: str):
+        self.message = message
+        self._stop = threading.Event()
+        self._thread = None
+
+    def _spin(self):
+        i = 0
+        while not self._stop.is_set():
+            frame = self.FRAMES[i % len(self.FRAMES)]
+            color = self.COLORS[i % len(self.COLORS)]
+            sys.stdout.write(f"\r  {color}{C.BOLD}{frame}{C.RST} {C.WHITE}{self.message}{C.RST} ")
+            sys.stdout.flush()
+            i += 1
+            time.sleep(0.08)
+        sys.stdout.write(f"\r{' ' * (len(self.message) + 10)}\r")
+        sys.stdout.flush()
+
+    def __enter__(self):
+        self._thread = threading.Thread(target=self._spin, daemon=True)
+        self._thread.start()
+        return self
+
+    def __exit__(self, *_):
+        self._stop.set()
+        self._thread.join()
+        
+def progress_bar(current: int, total: int, width: int = 30) -> str:
+    """Красивый прогресс-бар с градиентом."""
+    pct = current / total if total else 0
+    filled = int(width * pct)
+    empty = width - filled
+
+    bar = ""
+    for i in range(filled):
+        color_idx = int(i / width * (len(GRADIENT) - 1))
+        bar += f"{GRADIENT[color_idx]}█"
+    bar += f"{C.GRAY}{'░' * empty}{C.RST}"
+
+    return f"{bar} {C.WHITE}{C.BOLD}{current}{C.RST}{C.GRAY}/{total}{C.RST}"
 
 def check_dependencies():
-    """Проверяет наличие yt-dlp и ffmpeg."""
     missing = []
     if not shutil.which("yt-dlp"):
         missing.append("yt-dlp")
     if not shutil.which("ffmpeg"):
         missing.append("ffmpeg")
     if missing:
-        print(f"❌ Не найдены: {', '.join(missing)}")
-        print("   brew install yt-dlp ffmpeg")
+        print(f"  {C.err('✘')} Не найдены: {C.BOLD}{', '.join(missing)}{C.RST}")
+        print(f"    {C.dim('brew install yt-dlp ffmpeg')}")
         sys.exit(1)
 
 def detect_source(url: str) -> str:
-    """Определяет источник по URL."""
     if "youtube.com" in url or "youtu.be" in url:
         return "youtube"
     if "soundcloud.com" in url:
@@ -55,50 +210,49 @@ def detect_source(url: str) -> str:
     return "unknown"
 
 
-class SpotifyClient:
-    """Минимальный Spotify API клиент на чистом urllib."""
+SOURCE_ICONS = {
+    "youtube":    f"{C.RED}▶{C.RST}  YouTube",
+    "soundcloud": f"{C.YELLOW}☁{C.RST}  SoundCloud",
+    "spotify":    f"{C.GREEN}●{C.RST}  Spotify",
+    "unknown":    f"{C.GRAY}?{C.RST}  URL",
+}
 
+class SpotifyClient:
     TOKEN_URL = "https://accounts.spotify.com/api/token"
     API_BASE = "https://api.spotify.com/v1"
 
     def __init__(self):
-        client_id = os.environ.get("SPOTIFY_CLIENT_ID", "")
-        client_secret = os.environ.get("SPOTIFY_CLIENT_SECRET", "")
-        if not client_id or not client_secret:
-            env_path = Path(__file__).resolve().parent / ".env"
-            print("❌ Для работы со Spotify нужны API credentials.")
+        cid = SPOTIFY_CLIENT_ID or os.environ.get("SPOTIFY_CLIENT_ID", "")
+        csec = SPOTIFY_CLIENT_SECRET or os.environ.get("SPOTIFY_CLIENT_SECRET", "")
+        if not cid or not csec:
             print()
-            print("   1. Зайди на https://developer.spotify.com/dashboard")
-            print("   2. Создай приложение (любое имя, Redirect URI: http://localhost)")
-            print("   3. Скопируй Client ID и Client Secret")
-            print(f"   4. Создай файл .env рядом со скриптом:")
-            print(f"      {env_path}")
+            print(f"  {C.err('✘')} Для Spotify нужны API credentials.")
             print()
-            print('   SPOTIFY_CLIENT_ID=твой_client_id')
-            print('   SPOTIFY_CLIENT_SECRET=твой_client_secret')
+            print(f"    {C.neon_cyan('1.')} Зайди на {C.BOLD}https://developer.spotify.com/dashboard{C.RST}")
+            print(f"    {C.neon_cyan('2.')} Создай приложение")
+            print(f"    {C.neon_cyan('3.')} Открой {C.neon_green('download.py')} и заполни:")
+            print()
+            print(f"    {C.neon_purple('SPOTIFY_CLIENT_ID')}     = {C.dim('\"твой_client_id\"')}")
+            print(f"    {C.neon_purple('SPOTIFY_CLIENT_SECRET')} = {C.dim('\"твой_client_secret\"')}")
+            print()
             sys.exit(1)
-        self._token = self._auth(client_id, client_secret)
+        self._token = self._auth(cid, csec)
 
-    def _auth(self, client_id: str, client_secret: str) -> str:
-        """Client Credentials Flow — получает access token."""
+    def _auth(self, client_id, client_secret):
         creds = b64encode(f"{client_id}:{client_secret}".encode()).decode()
         req = Request(
             self.TOKEN_URL,
             data=urlencode({"grant_type": "client_credentials"}).encode(),
-            headers={
-                "Authorization": f"Basic {creds}",
-                "Content-Type": "application/x-www-form-urlencoded",
-            },
+            headers={"Authorization": f"Basic {creds}", "Content-Type": "application/x-www-form-urlencoded"},
         )
         try:
             with urlopen(req, timeout=10) as resp:
                 return json.loads(resp.read())["access_token"]
         except Exception as e:
-            print(f"❌ Ошибка авторизации Spotify: {e}")
+            print(f"  {C.err('✘')} Spotify auth: {e}")
             sys.exit(1)
 
-    def _get(self, endpoint: str, params: dict | None = None) -> dict:
-        """GET запрос к Spotify API."""
+    def _get(self, endpoint, params=None):
         url = f"{self.API_BASE}/{endpoint}"
         if params:
             url += "?" + urlencode(params)
@@ -109,256 +263,212 @@ class SpotifyClient:
         except HTTPError as e:
             if e.code == 429:
                 retry = int(e.headers.get("Retry-After", 3))
-                print(f"⏳ Rate limit, жду {retry}с...")
+                print(f"  {C.warn('⏳')} Rate limit, жду {retry}с...")
                 time.sleep(retry)
                 return self._get(endpoint, params)
             raise
 
-    def _parse_url(self, url: str) -> tuple[str, str]:
-        """Извлекает тип и ID из Spotify URL / URI."""
-        # URI: spotify:track:4iV5W9uYEdYUVa79Axb7Rh
-        uri_match = re.match(r"spotify:(track|album|playlist):(\w+)", url)
-        if uri_match:
-            return uri_match.group(1), uri_match.group(2)
-        # URL: https://open.spotify.com/track/4iV5W9uYEdYUVa79Axb7Rh?si=...
-        url_match = re.search(r"open\.spotify\.com/(track|album|playlist)/(\w+)", url)
-        if url_match:
-            return url_match.group(1), url_match.group(2)
-        print(f"❌ Не удалось распарсить Spotify URL: {url}")
+    def _parse_url(self, url):
+        m = re.match(r"spotify:(track|album|playlist):(\w+)", url)
+        if m:
+            return m.group(1), m.group(2)
+        m = re.search(r"open\.spotify\.com/(track|album|playlist)/(\w+)", url)
+        if m:
+            return m.group(1), m.group(2)
+        print(f"  {C.err('✘')} Не удалось распарсить: {url}")
         sys.exit(1)
 
-    def _format_track(self, track: dict) -> dict:
-        """Форматирует данные трека."""
-        artists = ", ".join(a["name"] for a in track["artists"])
+    def _fmt_track(self, t):
+        artists = ", ".join(a["name"] for a in t["artists"])
         return {
-            "title": track["name"],
+            "title": t["name"],
             "artists": artists,
-            "album": track.get("album", {}).get("name", ""),
-            "duration": track["duration_ms"] // 1000,
-            "query": f"{artists} - {track['name']}",
+            "album": t.get("album", {}).get("name", ""),
+            "duration": t["duration_ms"] // 1000,
+            "query": f"{artists} - {t['name']}",
         }
 
-    def get_tracks(self, url: str) -> list[dict]:
-        """Возвращает список треков из Spotify URL (track/album/playlist)."""
+    def _paginate(self, items, next_url):
+        while next_url:
+            ep = next_url.replace(self.API_BASE + "/", "")
+            data = self._get(ep)
+            items.extend(data["items"])
+            next_url = data.get("next")
+        return items
+
+    def get_tracks(self, url):
         kind, item_id = self._parse_url(url)
 
         if kind == "track":
-            data = self._get(f"tracks/{item_id}")
-            return [self._format_track(data)]
+            return [self._fmt_track(self._get(f"tracks/{item_id}"))]
 
         if kind == "album":
             album = self._get(f"albums/{item_id}")
-            album_name = album["name"]
-            tracks = []
-            items = album["tracks"]["items"]
-            next_url = album["tracks"].get("next")
-            while next_url:
-                endpoint = next_url.replace(self.API_BASE + "/", "")
-                data = self._get(endpoint)
-                items.extend(data["items"])
-                next_url = data.get("next")
-            for t in items:
-                artists = ", ".join(a["name"] for a in t["artists"])
-                tracks.append({
-                    "title": t["name"],
-                    "artists": artists,
-                    "album": album_name,
-                    "duration": t["duration_ms"] // 1000,
-                    "query": f"{artists} - {t['name']}",
-                })
-            return tracks
+            items = self._paginate(album["tracks"]["items"], album["tracks"].get("next"))
+            return [{
+                "title": t["name"],
+                "artists": ", ".join(a["name"] for a in t["artists"]),
+                "album": album["name"],
+                "duration": t["duration_ms"] // 1000,
+                "query": f"{', '.join(a['name'] for a in t['artists'])} - {t['name']}",
+            } for t in items]
 
         if kind == "playlist":
+            data = self._get(f"playlists/{item_id}",
+                {"fields": "name,tracks(items(track(name,artists,album(name),duration_ms)),next)"})
+            items = self._paginate(data["tracks"]["items"], data["tracks"].get("next"))
             tracks = []
-            data = self._get(
-                f"playlists/{item_id}",
-                {"fields": "name,tracks(items(track(name,artists,album(name),duration_ms)),next)"},
-            )
-            items = data["tracks"]["items"]
-            next_url = data["tracks"].get("next")
-            while next_url:
-                endpoint = next_url.replace(self.API_BASE + "/", "")
-                page = self._get(endpoint)
-                items.extend(page["items"])
-                next_url = page.get("next")
             for item in items:
                 t = item.get("track")
-                if not t or not t.get("name"):
-                    continue  # подкасты, удалённые треки
-                tracks.append(self._format_track(t))
+                if t and t.get("name"):
+                    tracks.append(self._fmt_track(t))
             return tracks
 
-        print(f"❌ Неподдерживаемый тип: {kind}")
+        print(f"  {C.err('✘')} Неподдерживаемый тип: {kind}")
         sys.exit(1)
 
-def search_youtube(query: str) -> str | None:
-    """Ищет трек на YouTube через yt-dlp, возвращает URL."""
+def search_youtube(query):
     try:
-        result = subprocess.run(
+        r = subprocess.run(
             ["yt-dlp", f"ytsearch1:{query}", "--get-id", "--no-playlist", "--no-warnings"],
             capture_output=True, text=True, timeout=30,
         )
-        if result.returncode == 0 and result.stdout.strip():
-            video_id = result.stdout.strip().split("\n")[0]
-            return f"https://www.youtube.com/watch?v={video_id}"
+        if r.returncode == 0 and r.stdout.strip():
+            return f"https://www.youtube.com/watch?v={r.stdout.strip().split(chr(10))[0]}"
     except Exception:
         pass
     return None
 
-def get_track_info(url: str) -> dict | None:
-    """Получает метаданные трека (YouTube/SoundCloud)."""
+def get_track_info(url):
     try:
-        result = subprocess.run(
+        r = subprocess.run(
             ["yt-dlp", "--no-download", "--print", "%(title)s\n%(duration)s\n%(id)s", url],
             capture_output=True, text=True, timeout=30,
         )
-        if result.returncode != 0:
+        if r.returncode != 0:
             return None
-        lines = result.stdout.strip().split("\n")
-        duration = 0
+        lines = r.stdout.strip().split("\n")
+        dur = 0
         try:
-            duration = int(float(lines[1] or 0))
+            dur = int(float(lines[1] or 0))
         except (ValueError, IndexError):
             pass
-        return {"title": lines[0], "duration": duration, "id": lines[2] if len(lines) > 2 else ""}
+        return {"title": lines[0], "duration": dur}
     except Exception:
         return None
 
-def sanitize_filename(name: str) -> str:
-    """Убирает недопустимые символы из имени файла."""
-    forbidden = '<>:"/\\|?*'
-    for ch in forbidden:
+def sanitize(name):
+    for ch in '<>:"/\\|?*':
         name = name.replace(ch, "_")
     return name.strip(". ")
 
-def format_duration(seconds: int) -> str:
-    """Форматирует секунды в M:SS."""
-    m, s = divmod(seconds, 60)
-    return f"{m}:{s:02d}"
 
-def build_cmd(
-    url: str,
-    output_dir: Path,
-    stem: str,
-    fmt: str,
-    sample_rate: int,
-) -> list[str]:
-    """Собирает команду yt-dlp."""
+def fmt_dur(s):
+    m, sec = divmod(s, 60)
+    return f"{m}:{sec:02d}"
+
+
+def fmt_size(bytes_):
+    mb = bytes_ / (1024 * 1024)
+    return f"{mb:.1f} MB"
+
+
+def build_cmd(url, output_dir, stem, fmt, sample_rate):
     cmd = ["yt-dlp", "-x", "--no-playlist", "--no-part", "--quiet"]
-
     if fmt == "wav":
-        cmd += ["--audio-format", "wav",
-                "--postprocessor-args", f"ffmpeg:-ar {sample_rate} -ac 2"]
+        cmd += ["--audio-format", "wav", "--postprocessor-args", f"ffmpeg:-ar {sample_rate} -ac 2"]
     else:
-        cmd += ["--audio-format", "mp3",
-                "--postprocessor-args", "ffmpeg:-b:a 320k -ac 2"]
-
-    cmd += ["-o", str(output_dir / f"{stem}.%(ext)s")]
-    cmd.append(url)
+        cmd += ["--audio-format", "mp3", "--postprocessor-args", "ffmpeg:-b:a 320k -ac 2"]
+    cmd += ["-o", str(output_dir / f"{stem}.%(ext)s"), url]
     return cmd
 
-def download_single(
-    url: str,
-    output_dir: Path,
-    filename: str | None,
-    fmt: str,
-    sample_rate: int,
-    quiet: bool,
-) -> bool:
-    """Скачивает один трек. Возвращает True при успехе."""
+def download_single(url, output_dir, filename, fmt, sample_rate, quiet):
     info = get_track_info(url)
     if not info:
-        print(f"  ❌ Не удалось получить информацию: {url}")
+        print(f"  {C.err('✘')} Не удалось получить информацию")
         return False
 
-    stem = sanitize_filename(filename) if filename else sanitize_filename(info["title"])
+    stem = sanitize(filename) if filename else sanitize(info["title"])
     output_path = output_dir / f"{stem}.{fmt}"
 
     if output_path.exists():
         if quiet:
             return True
-        answer = input(f"  ⚠️  {output_path.name} существует. Перезаписать? [y/N] ").strip().lower()
-        if answer != "y":
+        a = input(f"  {C.warn('!')} {output_path.name} существует. Перезаписать? [y/N] ").strip().lower()
+        if a != "y":
             return True
 
-    if not quiet:
-        fmt_label = f"WAV {sample_rate}Hz" if fmt == "wav" else "MP3 320kbps"
-        print(f"  📥 {fmt_label} → {stem}.{fmt}")
+    fmt_label = f"WAV {sample_rate}Hz" if fmt == "wav" else "MP3 320kbps"
 
-    cmd = build_cmd(url, output_dir, stem, fmt, sample_rate)
-    result = subprocess.run(cmd, capture_output=True)
+    if not quiet:
+        with Spinner(f"{fmt_label} → {stem}.{fmt}"):
+            result = subprocess.run(build_cmd(url, output_dir, stem, fmt, sample_rate), capture_output=True)
+    else:
+        result = subprocess.run(build_cmd(url, output_dir, stem, fmt, sample_rate), capture_output=True)
 
     if result.returncode != 0:
-        print(f"  ❌ Ошибка загрузки: {stem}")
+        print(f"  {C.err('✘')} Ошибка загрузки: {stem}")
         return False
 
     if output_path.exists():
-        size_mb = output_path.stat().st_size / (1024 * 1024)
+        size = fmt_size(output_path.stat().st_size)
         if not quiet:
-            print(f"  ✅ {output_path.name} ({size_mb:.1f} MB)")
+            print(f"  {C.ok('✔')} {C.neon_green(stem)}.{fmt}  {C.dim(size)}")
     return True
 
-def handle_spotify(
-    url: str,
-    output_dir: Path,
-    filename: str | None,
-    fmt: str,
-    sample_rate: int,
-    quiet: bool,
-):
-    """Обрабатывает Spotify URL: track / album / playlist."""
-    client = SpotifyClient()
-    tracks = client.get_tracks(url)
+def handle_spotify(url, output_dir, filename, fmt, sample_rate, quiet):
+    with Spinner("Получаю данные из Spotify..."):
+        client = SpotifyClient()
+        tracks = client.get_tracks(url)
 
     if not tracks:
-        print("❌ Не удалось получить треки.")
+        print(f"  {C.err('✘')} Не удалось получить треки")
         sys.exit(1)
 
     total = len(tracks)
-    is_single = total == 1
 
-    if is_single:
+    if total == 1:
         t = tracks[0]
         if not quiet:
-            print(f"🎵 {t['artists']} — {t['title']}")
+            print(f"  {C.neon_purple('♫')} {C.BOLD}{t['artists']}{C.RST} {C.dim('—')} {C.WHITE}{t['title']}{C.RST}")
             if t["album"]:
-                print(f"💿 {t['album']}")
-            print(f"⏱  {format_duration(t['duration'])}")
-            print(f"🔍 Ищу на YouTube...")
+                print(f"  {C.neon_violet('◉')} {t['album']}")
+            print(f"  {C.neon_cyan('⏱')} {fmt_dur(t['duration'])}")
+            print()
 
-        yt_url = search_youtube(t["query"])
+        with Spinner("Ищу на YouTube..."):
+            yt_url = search_youtube(t["query"])
+
         if not yt_url:
-            print(f"❌ Не найдено на YouTube: {t['query']}")
+            print(f"  {C.err('✘')} Не найдено на YouTube: {t['query']}")
             sys.exit(1)
 
         if not quiet:
-            print(f"🔗 {yt_url}")
+            print(f"  {C.neon_green('⇢')} {C.dim(yt_url)}")
 
         name = filename or f"{t['artists']} - {t['title']}"
         download_single(yt_url, output_dir, name, fmt, sample_rate, quiet)
         return
 
-    # Playlist / Album 
+    # ── Playlist / Album ──
     if not quiet:
         total_dur = sum(t["duration"] for t in tracks)
-        fmt_label = f"WAV {sample_rate}Hz" if fmt == "wav" else "MP3 320kbps"
-        print(f"📋 {total} треков, ~{format_duration(total_dur)}")
-        print(f"🎧 {fmt_label}")
-        print(f"📂 {output_dir}")
+        fmt_label = f"{C.neon_green('WAV')} {sample_rate}Hz" if fmt == "wav" else f"{C.neon_purple('MP3')} 320kbps"
+        print(f"  {C.neon_purple('◉')} {C.BOLD}{total} треков{C.RST}  {C.dim('•')}  {fmt_dur(total_dur)}  {C.dim('•')}  {fmt_label}")
+        print(f"  {C.neon_cyan('⇣')} {output_dir}")
         print()
 
-    ok = 0
-    fail = 0
+    ok = fail = 0
 
     for i, t in enumerate(tracks, 1):
-        tag = f"[{i}/{total}]"
         if not quiet:
-            print(f"{tag} 🔍 {t['artists']} — {t['title']}")
+            bar = progress_bar(i, total)
+            print(f"  {bar}  {C.neon_purple('♫')} {t['artists']} — {t['title']}")
 
         yt_url = search_youtube(t["query"])
         if not yt_url:
             if not quiet:
-                print(f"  ❌ Не найдено на YouTube")
+                print(f"    {C.err('✘')} Не найдено на YouTube")
             fail += 1
             continue
 
@@ -368,60 +478,62 @@ def handle_spotify(
         else:
             fail += 1
 
+    # Summary
     print()
-    print(f"📊 Итого: ✅ {ok} загружено, ❌ {fail} ошибок из {total}")
+    sep = f"{C.PURPLE}{'─' * 40}{C.RST}"
+    print(f"  {sep}")
+    print(f"  {C.ok('✔')} {ok} загружено   {C.err('✘')} {fail} ошибок   {C.dim(f'из {total}')}")
+    print()
 
-def handle_direct(
-    url: str,
-    output_dir: Path,
-    filename: str | None,
-    fmt: str,
-    sample_rate: int,
-    quiet: bool,
-):
-    """Прямая загрузка с YouTube / SoundCloud."""
+def handle_direct(url, output_dir, filename, fmt, sample_rate, quiet):
     source = detect_source(url)
-    source_label = {"youtube": "YouTube", "soundcloud": "SoundCloud"}.get(source, "URL")
 
-    info = get_track_info(url)
+    if not quiet:
+        with Spinner("Получаю информацию..."):
+            info = get_track_info(url)
+    else:
+        info = get_track_info(url)
+
     if not info:
-        print("❌ Не удалось получить информацию о треке. Проверь ссылку.")
+        print(f"  {C.err('✘')} Не удалось получить информацию. Проверь ссылку.")
         sys.exit(1)
 
     if not quiet:
-        print(f"🎵 {info['title']}")
-        print(f"📡 {source_label}")
-        print(f"⏱  {format_duration(info['duration'])}")
+        icon = SOURCE_ICONS.get(source, SOURCE_ICONS["unknown"])
+        print(f"  {C.neon_purple('♫')} {C.BOLD}{info['title']}{C.RST}")
+        print(f"  {icon}")
+        print(f"  {C.neon_cyan('⏱')} {fmt_dur(info['duration'])}")
+        print()
 
     download_single(url, output_dir, filename, fmt, sample_rate, quiet)
-    
+
 def main():
     parser = argparse.ArgumentParser(
         prog="download",
-        description="Загрузка аудио с YouTube / SoundCloud / Spotify → WAV или MP3",
+        description="Загрузка аудио: YouTube / SoundCloud / Spotify → WAV или MP3",
         epilog="Примеры:\n"
                '  python3 download.py "https://youtube.com/watch?v=VIDEO_ID"\n'
                '  python3 download.py "https://soundcloud.com/artist/track" -f mp3\n'
                '  python3 download.py "https://open.spotify.com/track/ID"\n'
-               '  python3 download.py "https://open.spotify.com/playlist/ID" -f mp3 -o ~/Music\n'
-               '  python3 download.py "https://open.spotify.com/album/ID" -f wav -r 48000\n',
+               '  python3 download.py "https://open.spotify.com/playlist/ID" -f mp3 -o ~/Music\n',
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     parser.add_argument("url", help="YouTube / SoundCloud / Spotify (track, album, playlist)")
     parser.add_argument("-f", "--format", dest="fmt", default="wav", choices=["wav", "mp3"],
                         help="wav (lossless) или mp3 (320kbps). По умолчанию: wav")
     parser.add_argument("-o", "--output", default=".",
-                        help="Директория для сохранения (по умолчанию: текущая)")
+                        help="Директория для сохранения")
     parser.add_argument("-n", "--name", default=None,
-                        help="Имя файла без расширения (только для одного трека)")
+                        help="Имя файла без расширения (один трек)")
     parser.add_argument("-r", "--rate", type=int, default=44100,
                         choices=[22050, 44100, 48000, 96000],
                         help="Sample rate для WAV (по умолчанию: 44100)")
     parser.add_argument("-q", "--quiet", action="store_true",
-                        help="Минимальный вывод")
+                        help="Без анимаций и лишнего вывода")
 
     args = parser.parse_args()
-    load_env()
+
+    print_splash(args.quiet)
     check_dependencies()
 
     output_dir = Path(args.output).expanduser().resolve()
@@ -433,6 +545,9 @@ def main():
         handle_spotify(args.url, output_dir, args.name, args.fmt, args.rate, args.quiet)
     else:
         handle_direct(args.url, output_dir, args.name, args.fmt, args.rate, args.quiet)
+
+    if not args.quiet:
+        print()
 
 
 if __name__ == "__main__":
